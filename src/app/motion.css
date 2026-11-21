@@ -1,0 +1,81 @@
+@keyframes rise-in {
+  from { opacity: 0; translate: 0 18px; }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes surface-in {
+  from { opacity: .25; translate: 0 16px; scale: .99; }
+  to { opacity: 1; translate: 0 0; scale: 1; }
+}
+@keyframes page-in { from { opacity: .45; } to { opacity: 1; } }
+@keyframes photo-in {
+  from { opacity: 0; translate: var(--photo-shift, 0) 0; }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes confirmation-in {
+  0% { opacity: 0; transform: scale(.62) rotate(-12deg); }
+  72% { opacity: 1; transform: scale(1.07); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes strip-in {
+  from { opacity: .3; clip-path: inset(0 88% 0 0); }
+  to { opacity: 1; clip-path: inset(0); }
+}
+@keyframes photo-drift {
+  from { transform: scale(1.06) translateY(2.5%); }
+  to { transform: scale(1.06) translateY(-2.5%); }
+}
+
+.photo-previous { pointer-events: none; }
+.gallery-lightbox .photo-enter { background: #111218; }
+.photo-enter[data-transition="true"]:not([data-loaded="true"]) { opacity: 0; }
+.photo-enter[data-direction="1"] { --photo-shift: 22px; }
+.photo-enter[data-direction="-1"] { --photo-shift: -22px; }
+.photo-enter[data-loaded="true"] { animation: photo-in .46s var(--ease-out) both; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .page-motion { animation: page-in .33s var(--ease-out) both; }
+  .page-intro > .container, .view-enter { animation: surface-in .45s var(--ease-out) both; }
+  .admin-page[data-calendar-expanded="true"] { animation: page-in .25s var(--ease-out) both; }
+  .home-hero-content > * { animation: rise-in .7s var(--ease-out) both; }
+  .home-hero-content h1 { animation-delay: .07s; }
+  .home-hero-content .hero-description { animation-delay: .13s; }
+  .home-search, .home-hero-photo { animation: surface-in .72s var(--ease-out) both; }
+  .home-search { animation-delay: .18s; }
+  .home-hero-photo { animation-delay: .24s; }
+  [data-reveal-state="waiting"]:not(:focus-within) { opacity: 0; translate: 0 22px; }
+  [data-reveal-state="visible"] { animation: rise-in .75s var(--ease-out) both; }
+  .room-tile:nth-child(2) { animation-delay: .07s; }
+  .room-tile:nth-child(3) { animation-delay: .14s; }
+  .finder-content > .notice, .finder-content .room-card { animation: surface-in .62s var(--ease-out) both; }
+  .finder-content .room-card:nth-child(3n + 2) { animation-delay: .075s; }
+  .finder-content .room-card:nth-child(3n) { animation-delay: .15s; }
+  .booking-success svg, .theme-toggle svg { animation: confirmation-in .48s var(--ease-out) both; }
+  .calendar-strip { animation: strip-in .36s var(--ease-out) both; }
+  .picker-dates, .picker-months { animation: surface-in .32s var(--ease-out) both; }
+
+  .button:active:not(:disabled), .icon-button:active:not(:disabled),
+  .control-trigger:active, .picker-dates button:active:not(:disabled),
+  .picker-months button:active:not(:disabled), .gallery-thumbnail:active { transform: scale(.96); }
+  .room-card-photo img, .room-tile img { transition: transform .72s var(--ease-out); }
+  .room-tile-copy { transition: translate .42s var(--ease-out); }
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .button-primary:hover:not(:disabled) { box-shadow: 0 6px 18px #075cdb35; transform: translateY(-1px); }
+  .room-card-photo:hover img, .room-tile:hover img { transform: scale(1.05); }
+  .room-tile:hover .room-tile-copy { translate: 0 -4px; }
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .home-hero-photo img {
+      animation: photo-drift 1s linear both;
+      animation-timeline: view();
+      animation-range: entry 0% exit 100%;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

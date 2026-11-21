@@ -1,0 +1,55 @@
+html { color-scheme: light; }
+
+:root {
+  --booked-fill: #dce7ff;
+  --booked-line: #b6cbf4;
+  --booked-text: #194183;
+  --booked-hover: #c5d9ff;
+  --closed-fill: #f3e4c7;
+  --closed-stripe: #fbefdb;
+  --closed-line: #e1ccaa;
+  --closed-text: #694716;
+  --danger-fill: #fbeaed;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #111216;
+  --surface: #1b1d25;
+  --surface-alt: #232633;
+  --ink: #f1f3fa;
+  --muted: #b1b6c6;
+  --line: #343849;
+  --control-border: #444b61;
+  --control-active: #698bd4;
+  --accent: #2866dc;
+  --accent-hover: #2e70e7;
+  --accent-text: #9bbdff;
+  --accent-soft: #212f4d;
+  --focus: #90b5ff;
+  --error: #ffabb4;
+  --success: #83d6a3;
+  --hero-glow: #182a49;
+  --header-bg: #14151ae8;
+  --shadow: 0 12px 48px #00000055;
+  --booked-fill: #263c65;
+  --booked-line: #48699f;
+  --booked-text: #d6e5ff;
+  --booked-hover: #314e7e;
+  --closed-fill: #544226;
+  --closed-stripe: #49391f;
+  --closed-line: #7a5d36;
+  --closed-text: #fee3ac;
+  --danger-fill: #4b2d37;
+}
+
+.theme-sun { display: none; }
+[data-theme="dark"] .theme-moon { display: none; }
+[data-theme="dark"] .theme-sun { display: block; }
+
+body, .site-header, .site-footer, .date-search, .room-card, .booking-panel,
+.calendar-card, .analytics-load, .metric-card, .category-amenities, .button-outline {
+  transition-property: background-color, color, border-color, box-shadow, transform;
+  transition-duration: .3s;
+  transition-timing-function: var(--ease-out);
+}
