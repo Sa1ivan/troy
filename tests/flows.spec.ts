@@ -1,5 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
 
+const basePath = new URL(process.env.TROY_TEST_URL ?? "http://localhost").pathname.replace(/\/$/, "");
+const pagesDemo = basePath !== "";
+const submitRequestLabel = pagesDemo ? "Сохранить тестовую заявку" : "Отправить заявку";
+const requestSuccessLabel = pagesDemo ? "Тестовая заявка сохранена" : "Заявка принята";
+
+function sitePath(path: string) {
+  return encodeURI(basePath + path);
+}
+
 async function chooseDate(page: Page, label: string, date: string) {
   await page.getByRole("button", { name: label, exact: true }).click();
   const picker = page.getByRole("dialog", { name: label, exact: true });
@@ -15,7 +24,7 @@ async function chooseOption(page: Page, label: string, option: string) {
 }
 
 async function signIn(page: Page) {
-  await page.goto("/admin/");
+  await page.goto(sitePath("/admin/"));
   await expect(page.getByRole("heading", { name: "Вход для сотрудников" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Админка", exact: true })).toHaveCount(0);
   await page.getByLabel("Логин").fill("admin");
@@ -30,7 +39,7 @@ for (const { path, action } of [
 ]) {
   test("подбор плавно прокручивает к результату на той же странице " + path, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(encodeURI(path));
+    await page.goto(sitePath(path));
     await chooseDate(page, "Заезд", "14 июня 2027");
     await chooseDate(page, "Выезд", "16 июня 2027");
     const submit = page.getByRole("button", { name: action, exact: true });
@@ -46,7 +55,7 @@ for (const { path, action } of [
     await submit.click();
     const results = page.getByRole("region", { name: "Номера на ваши даты", exact: true });
     await expect(results).toContainText(/9\s500\s₽/);
-    expect(decodeURI(new URL(page.url()).pathname)).toBe(path);
+    expect(decodeURI(new URL(page.url()).pathname)).toBe(basePath + path);
     await expect.poll(async () => results.evaluate((element) => {
       const { top, bottom } = element.getBoundingClientRect();
       const atPageEnd = Math.abs(window.scrollY + window.innerHeight - document.documentElement.scrollHeight) < 2;
@@ -63,7 +72,9 @@ test("гость с телефона отправляет заявку, адми
   await signIn(staff);
   await staff.getByRole("button", { name: /Заявки и брони/ }).click();
 
-  await page.goto("/");
+  await page.goto(sitePath("/"));
+  const facade = page.getByRole("img", { name: "Фасад гостевого дома «Троя» в Лазаревском" });
+  await expect.poll(() => facade.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
   await expect(page.getByRole("link", { name: "Админка", exact: true })).toHaveCount(0);
   await chooseDate(page, "Заезд", "14 июня 2027");
   await chooseDate(page, "Выезд", "16 июня 2027");
@@ -74,11 +85,11 @@ test("гость с телефона отправляет заявку, адми
   await page.getByLabel("Имя", { exact: true }).fill("Тестовый Гость");
   await page.getByLabel("Телефон", { exact: true }).fill("+70000000004");
   await page.getByRole("checkbox", { name: /Согласен на обработку/ }).check();
-  const submit = page.getByRole("button", { name: "Отправить заявку" });
+  const submit = page.getByRole("button", { name: submitRequestLabel });
   await submit.scrollIntoViewIfNeeded();
   const before = await page.evaluate(() => window.scrollY);
   await submit.click();
-  await expect(page.getByRole("heading", { name: "Заявка принята" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: requestSuccessLabel })).toBeVisible();
   expect(Math.abs((await page.evaluate(() => window.scrollY)) - before)).toBeLessThanOrEqual(2);
 
   await staff.getByRole("button", { name: /Тестовый Гость/ }).click();
@@ -207,7 +218,7 @@ test("на узком экране шахматка занимает окно и
 
 test("сайт сохраняет тему и помещается при ширине от 1440 до 320 px, выбор закрывается по фону", async ({ page }) => {
   for (const path of ["/policy/", "/номера/", "/номера/standard-dbl/", "/номера/бронирование/", "/цены/", "/фото/", "/контакт/", "/отзывы/", "/admin/", "/"]) {
-    await page.goto(encodeURI(path));
+    expect((await page.goto(sitePath(path)))?.ok(), path).toBeTruthy();
     await page.evaluate(() => document.fonts.ready);
     for (const width of [1440, 1024, 768, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
@@ -240,14 +251,14 @@ test("сайт сохраняет тему и помещается при шир
 
 test("одновременное подтверждение двух заявок в одну комнату даёт одну бронь", async ({ page, context }) => {
   const names = ["Гость Первый", "Гость Второй"];
-  const bookingPath = encodeURI("/номера/бронирование/") + "?checkIn=2027-06-14&checkOut=2027-06-16&guests=2&category=standard-dbl";
+  const bookingPath = sitePath("/номера/бронирование/") + "?checkIn=2027-06-14&checkOut=2027-06-16&guests=2&category=standard-dbl";
   for (const name of names) {
     await page.goto(bookingPath);
     await page.getByLabel("Имя", { exact: true }).fill(name);
     await page.getByLabel("Телефон", { exact: true }).fill("+70000000008");
     await page.getByRole("checkbox", { name: /Согласен на обработку/ }).check();
-    await page.getByRole("button", { name: "Отправить заявку" }).click();
-    await expect(page.getByRole("heading", { name: "Заявка принята" })).toBeVisible();
+    await page.getByRole("button", { name: submitRequestLabel }).click();
+    await expect(page.getByRole("heading", { name: requestSuccessLabel })).toBeVisible();
   }
   const staff = [await context.newPage(), await context.newPage()];
   await Promise.all(staff.map(async (tab, index) => {
@@ -272,7 +283,7 @@ test("одновременное подтверждение двух заяво�
 
 test("фотографии открываются во весь экран и листаются клавишами и свайпом", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(encodeURI("/фото/"));
+  await page.goto(sitePath("/фото/"));
   await page.getByRole("button", { name: /Увеличить фото/ }).click();
   const viewer = page.getByRole("dialog");
   await expect(viewer).toBeVisible();
@@ -294,17 +305,24 @@ test("фотографии открываются во весь экран и л
   await expect(viewer).toBeHidden();
 });
 
-test("публичные категории индексируются с готовым HTML, админка исключена из карты сайта", async ({ request }) => {
-  const detail = await request.get(encodeURI("/номера/standard-dbl/"));
+test("категории отдают готовый HTML, админка исключена из индексации и карты сайта", async ({ request }) => {
+  const detail = await request.get(sitePath("/номера/standard-dbl/"));
   expect(detail.ok()).toBeTruthy();
   const html = await detail.text();
   expect(html).toContain(">Стандарт DBL</h1>");
   expect(html).toMatch(/rel="canonical" href="https:\/\/troy-laz\.ru\/[^"]*standard-dbl\/"/);
-  const home = await request.get("/");
+  const home = await request.get(sitePath("/"));
   expect(await home.text()).toContain('"@type":"LodgingBusiness"');
-  const admin = await request.get("/admin/");
-  expect(admin.headers()["x-robots-tag"]).toBe("noindex, nofollow");
-  const sitemap = await request.get("/sitemap.xml");
+  const admin = await request.get(sitePath("/admin/"));
+  expect(admin.ok()).toBeTruthy();
+  expect(await admin.text()).toContain('<meta name="robots" content="noindex, nofollow"');
+  if (pagesDemo) {
+    expect(html).toContain('<meta name="robots" content="noindex, nofollow"');
+    expect(html).toMatch(/<form(?=[^>]*\binert)(?=[^>]*aria-label="Подбор номера")/);
+  } else {
+    expect(admin.headers()["x-robots-tag"]).toBe("noindex, nofollow");
+  }
+  const sitemap = await request.get(sitePath("/sitemap.xml"));
   expect(await sitemap.text()).toContain("standard-dbl/");
   expect(await sitemap.text()).not.toContain("/admin");
 });

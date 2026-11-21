@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutDashboard, LogIn, LogOut, Menu } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { mainLinks, routes, site } from "@/lib/site";
+import { mainLinks, routes, site, withBasePath } from "@/lib/site";
 import { Dialog } from "./dialog";
 import { useHotel } from "./hotel-provider";
 import { ThemeToggle } from "./theme-toggle";
@@ -22,7 +22,7 @@ export function SiteHeader({ brand }: { brand: ReactNode }) {
     return () => mobile.removeEventListener("change", closeOnResize);
   }, []);
   const { authenticated, signOut } = useHotel();
-  const current = (href: string) => visiblePath.startsWith(encodeURI(href));
+  const current = (href: string) => visiblePath.startsWith(encodeURI(withBasePath(href)));
   const navigation = [...mainLinks, ...(authenticated ? [{ href: routes.admin, label: "Админка" }] : [])].map(({ href, label }) => (
     <Link key={href} href={href} className={href === routes.admin ? "admin-nav-link" : undefined}
       aria-current={current(href) ? "page" : undefined} onClick={() => { if (expanded) setDismissMenu(true); }}>

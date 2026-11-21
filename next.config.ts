@@ -1,10 +1,15 @@
 import type { NextConfig } from "next";
 
+const pagesBasePath = process.env.NEXT_PUBLIC_TROY_BASE_PATH;
+
 const config: NextConfig = {
   trailingSlash: true,
   poweredByHeader: false,
   devIndicators: false,
   images: { unoptimized: true },
+};
+
+const serverRoutes: NextConfig = {
   async rewrites() {
     // Keep the original public URLs with ASCII segments in the App Router's cache.
     return { beforeFiles: [
@@ -35,4 +40,6 @@ const config: NextConfig = {
   },
 };
 
-export default config;
+export default pagesBasePath
+  ? { ...config, basePath: pagesBasePath, output: "export" }
+  : { ...config, ...serverRoutes };

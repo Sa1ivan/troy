@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Coffee, MapPin, Martini, Waves } from "lucide-react";
 import { ContactsBand } from "@/components/site-shell";
 import { StayFinder } from "@/components/stay-finder";
-import { roomHref, pageMetadata, routes, site } from "@/lib/site";
+import { roomHref, pageMetadata, routes, site, withBasePath } from "@/lib/site";
 
 const description = "Гостевой дом «Троя» в Лазаревском. Бассейн на крыше, пляж в 250 метрах, двухместные и семейные номера. Подбор номеров и заявки напрямую.";
 export const metadata = pageMetadata("Гостевой дом «Троя» в Лазаревском", description, routes.home, site.hero);
@@ -40,7 +40,7 @@ export default function Home() {
         </div>
         <StayFinder formClassName="container home-search" resultsClassName="container home-results">
           <figure className="container home-hero-photo">
-            <Image src={site.hero} alt="Фасад гостевого дома «Троя» в Лазаревском" fill sizes="(min-width: 1032px) 920px, 100vw" fetchPriority="high" loading="eager" />
+            <Image src={withBasePath(site.hero)} alt="Фасад гостевого дома «Троя» в Лазаревском" fill sizes="(min-width: 1032px) 920px, 100vw" fetchPriority="high" loading="eager" />
           </figure>
         </StayFinder>
       </section>
@@ -57,7 +57,7 @@ export default function Home() {
         <div className="room-showcase">
           {featured.map(({ id, name, description, photo }) => (
             <Link key={id} href={roomHref(id)} className={"room-tile" + (id === "standard-dbl" ? " room-tile-featured" : "")} data-reveal>
-              <Image src={photo} alt="" fill sizes="(min-width: 800px) 55vw, 100vw" />
+              <Image src={withBasePath(photo)} alt="" fill sizes="(min-width: 800px) 55vw, 100vw" />
               <div className="room-tile-copy">
                 <h3>{name}</h3>
                 <p>{description}</p>
@@ -75,7 +75,7 @@ export default function Home() {
             <Link className="button button-outline" href={routes.photos}>Смотреть фотографии</Link>
           </div>
           <div className="experience-photo" data-reveal>
-            <Image src="/images/hotel/pool/02.webp" alt="Вид на море и колесо обозрения с крыши гостевого дома" fill sizes="(min-width: 900px) 58vw, 100vw" />
+            <Image src={withBasePath("/images/hotel/pool/02.webp")} alt="Вид на море и колесо обозрения с крыши гостевого дома" fill sizes="(min-width: 900px) 58vw, 100vw" />
           </div>
         </div>
       </section>

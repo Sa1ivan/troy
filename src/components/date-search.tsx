@@ -25,7 +25,7 @@ export function DateSearch({ initial, categoryId, onSearch }: { initial?: Stay; 
   }
 
   return (
-    <form className="date-search" aria-label="Подбор номера" onSubmit={search}>
+    <form className="date-search" aria-label="Подбор номера" inert={!onSearch} onSubmit={search}>
       <div className="search-field">
         <CalendarDays size={22} aria-hidden="true" />
         <DateField className="search-control" label="Заезд" min={arrivalLimit} max={addDays(season.checkOut, -1)}

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { BedDouble, Maximize2, UsersRound } from "lucide-react";
 import { fromPrice, money, type Category } from "@/lib/catalog";
 import { countLabel, type Stay } from "@/lib/dates";
-import { roomHref, routes, site, stayHref } from "@/lib/site";
+import { roomHref, routes, site, stayHref, withBasePath } from "@/lib/site";
 
 export type SearchResult = { available: boolean; known: boolean; total: number | null; nights: number };
 
@@ -21,7 +21,7 @@ export function RoomCard({ category, stay, result, compact = false }: { category
     <article className={"room-card" + (compact ? " room-card-compact" : "")}>
       {!compact && (
         <Link href={detailHref} className="room-card-photo" aria-label={category.name + " — фотографии и описание"}>
-          <Image src={category.galleries[0].photos[0]} alt={category.name} fill sizes="(min-width: 1080px) 380px, (min-width: 700px) 47vw, 96vw" />
+          <Image src={withBasePath(category.galleries[0].photos[0])} alt={category.name} fill sizes="(min-width: 1080px) 380px, (min-width: 700px) 47vw, 96vw" />
         </Link>
       )}
       <div className="room-card-body">

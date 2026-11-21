@@ -4,6 +4,7 @@ import Image from "next/image";
 import { ChevronLeft, ChevronRight, Expand } from "lucide-react";
 import { useEffect, useRef, useState, type TouchEvent } from "react";
 import type { Gallery as GalleryData } from "@/lib/catalog";
+import { withBasePath } from "@/lib/site";
 import { SelectField } from "./controls";
 import { Dialog } from "./dialog";
 
@@ -33,7 +34,7 @@ export function Gallery({ galleries }: { galleries: GalleryData[] }) {
     if (total < 2) return;
     for (const step of [-1, 1]) {
       const preload = new window.Image();
-      preload.src = current.photos[(photo + step + total) % total];
+      preload.src = withBasePath(current.photos[(photo + step + total) % total]);
     }
   }, [current, photo, total]);
 
@@ -92,7 +93,7 @@ export function Gallery({ galleries }: { galleries: GalleryData[] }) {
         {current.photos.map((src, index) => (
           <button key={src} className="gallery-thumbnail" type="button" onClick={() => choosePhoto(index)}
             aria-label={"Показать фото " + (index + 1)} aria-pressed={photo === index}>
-            <Image src={src} alt="" fill sizes="96px" />
+            <Image src={withBasePath(src)} alt="" fill sizes="96px" />
           </button>
         ))}
       </div>
@@ -123,9 +124,9 @@ function GalleryImage({ src, previous, direction, description, sizes, eager }: {
   const transitioning = !!previous && previous !== src;
   return (
     <>
-      {transitioning && !settled && <Image src={previous} className="photo-previous" alt="" aria-hidden="true" fill sizes={sizes} />}
+      {transitioning && !settled && <Image src={withBasePath(previous)} className="photo-previous" alt="" aria-hidden="true" fill sizes={sizes} />}
       <Image className="photo-enter" data-transition={transitioning} data-direction={direction}
-        src={src} alt={description} fill sizes={sizes} loading={eager || transitioning ? "eager" : undefined}
+        src={withBasePath(src)} alt={description} fill sizes={sizes} loading={eager || transitioning ? "eager" : undefined}
         onLoad={(event) => { if (transitioning) event.currentTarget.dataset.loaded = "true"; }}
         onAnimationEnd={(event) => { if (event.animationName === "photo-in") setSettled(true); }} />
     </>

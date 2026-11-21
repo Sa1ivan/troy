@@ -2,12 +2,12 @@ import Image from "next/image";
 import Link from "next/link";
 import { Mail, MapPin, Phone } from "lucide-react";
 import type { ReactNode } from "react";
-import { mainLinks, routes, site } from "@/lib/site";
+import { mainLinks, routes, site, withBasePath } from "@/lib/site";
 
 export function Brand() {
   return (
     <Link className="brand" href="/" aria-label="Гостевой дом «Троя» — главная">
-      <Image src={site.logo} alt="" width={44} height={47} />
+      <Image src={withBasePath(site.logo)} alt="" width={44} height={47} />
       <span>
         <span className="brand-name">Троя</span>
         <span className="brand-description">Гостевой дом</span>

@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { availableRooms } from "@/lib/bookings";
 import { findCategory, money, quoteStay, type Category } from "@/lib/catalog";
 import { countLabel, firstArrival, nightsBetween, season, stayError, stayLabel, type Stay } from "@/lib/dates";
-import { readStay, roomHref, routes, site, stayHref } from "@/lib/site";
+import { isPagesDemo, readStay, roomHref, routes, site, stayHref } from "@/lib/site";
 import { newRecordId } from "@/lib/storage";
 import { useHotel } from "./hotel-provider";
 import { StayFinder } from "./stay-finder";
@@ -16,7 +16,9 @@ export function BookingOverview({ invalid }: { invalid?: boolean }) {
   return (
     <>
       {invalid && <p className="notice">Выберите даты проживания и подходящую категорию.</p>}
-      <p className="booking-instructions">Выберите даты и категорию номера, оставьте имя и телефон. Администратор перезвонит, чтобы подтвердить проживание.</p>
+      <p className="booking-instructions">{isPagesDemo
+        ? "Выберите даты и категорию номера, чтобы оформить тестовую заявку."
+        : "Выберите даты и категорию номера, оставьте имя и телефон. Администратор перезвонит, чтобы подтвердить проживание."}</p>
       <StayFinder>
         <a className="text-link booking-overview-phone" href={"tel:" + site.telephone}><Phone size={17} aria-hidden="true" /> {site.phone}</a>
       </StayFinder>
@@ -95,8 +97,10 @@ function BookingForm({ category, stay }: { category: Category; stay: Stay }) {
         {id ? (
           <section className="booking-success view-enter" aria-live="polite">
             <CircleCheck size={39} aria-hidden="true" />
-            <h2 tabIndex={-1} ref={success}>Заявка принята</h2>
-            <p>Номер заявки <strong>{id}</strong>. Администратор перезвонит, чтобы подтвердить даты и стоимость.</p>
+            <h2 tabIndex={-1} ref={success}>{isPagesDemo ? "Тестовая заявка сохранена" : "Заявка принята"}</h2>
+            <p>Номер заявки <strong>{id}</strong>. {isPagesDemo
+              ? "Откройте админку в этом же браузере, чтобы подтвердить заявку."
+              : "Администратор перезвонит, чтобы подтвердить даты и стоимость."}</p>
             <Link className="button button-primary" href={routes.home}>На главную</Link>
           </section>
         ) : storageError ? <p className="form-error" role="alert">{storageError}</p>
@@ -113,7 +117,7 @@ function BookingForm({ category, stay }: { category: Category; stay: Stay }) {
           ) : (
             <form className="field-stack" onSubmit={submit}>
               <h2>Ваши контакты</h2>
-              <p className="muted">Администратор перезвонит по указанному номеру.</p>
+              <p className="muted">{isPagesDemo ? "Тестовая заявка сохранится в этом браузере." : "Администратор перезвонит по указанному номеру."}</p>
               <label>Имя<input name="name" autoComplete="name" placeholder="Как к вам обращаться" required minLength={2} maxLength={80} /></label>
               <label>Телефон<input name="phone" autoComplete="tel" placeholder="+7 (___) ___-__-__" type="tel" required maxLength={30} /></label>
               <label className="consent-field">
@@ -122,7 +126,9 @@ function BookingForm({ category, stay }: { category: Category; stay: Stay }) {
               </label>
               <p className="demo-note">Локальная демонстрация. Для проверки используйте тестовое имя и телефон.</p>
               {error && <p role="alert" className="form-error">{error}</p>}
-              <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Сохраняем…" : "Отправить заявку"}</button>
+              <button className="button button-primary" type="submit" disabled={busy}>
+                {busy ? "Сохраняем…" : isPagesDemo ? "Сохранить тестовую заявку" : "Отправить заявку"}
+              </button>
             </form>
           )}
       </div>

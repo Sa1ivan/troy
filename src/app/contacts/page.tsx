@@ -1,7 +1,7 @@
 import Image from "next/image";
 import { Mail, MapPin, Phone } from "lucide-react";
 import { PageIntro } from "@/components/site-shell";
-import { pageMetadata, routes, site } from "@/lib/site";
+import { pageMetadata, routes, site, withBasePath } from "@/lib/site";
 
 export const metadata = pageMetadata("Контакты и как добраться", "Адрес: Сочи, Лазаревское, Спортивная, 5. Телефоны администратора и управляющего гостевого дома «Троя», маршрут на карте.", routes.contacts);
 
@@ -19,7 +19,7 @@ export default function ContactsPage() {
           </div></div>
           <div><Mail size={23} aria-hidden="true" /><div><h2>Написать нам</h2><p><a href={"mailto:" + site.email}>{site.email}</a></p><a href={site.vk} target="_blank" rel="noreferrer">«Троя» во ВКонтакте</a></div></div>
         </div>
-        <div className="contacts-photo"><Image src="/images/hotel/main/01.webp" alt="Здание гостевого дома «Троя»" fill sizes="(min-width: 900px) 50vw, 100vw" /></div>
+        <div className="contacts-photo"><Image src={withBasePath("/images/hotel/main/01.webp")} alt="Здание гостевого дома «Троя»" fill sizes="(min-width: 900px) 50vw, 100vw" /></div>
       </section>
     </>
   );

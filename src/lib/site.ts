@@ -2,6 +2,13 @@ import type { Metadata } from "next";
 import { categories, photosIn, type CategoryId, type Gallery } from "./catalog";
 import type { Stay } from "./dates";
 
+const basePath = process.env.NEXT_PUBLIC_TROY_BASE_PATH ?? "";
+export const isPagesDemo = basePath !== "";
+
+export function withBasePath(path: string) {
+  return basePath + path;
+}
+
 export const site = {
   name: "Гостевой дом «Троя»",
   url: "https://troy-laz.ru",
