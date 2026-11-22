@@ -2,7 +2,7 @@
 
 import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { addDays, dateLabel, hotelToday, isDate, monthLabel, monthRange, shiftMonth } from "@/lib/dates";
+import { addDays, countLabel, dateLabel, hotelToday, isDate, monthLabel, monthRange, nightsBetween, shiftMonth, stayLabel, type DateRange } from "@/lib/dates";
 import { Dialog } from "./dialog";
 
 type Option = { value: string; label: string };
@@ -90,8 +90,58 @@ export function DateField({ label, name, value, onChange, min = firstDate, max =
   );
 }
 
-function DateCalendar({ initial, value, min, max, onPick }: {
+export function DateRangeField({ range, min, max, onChange }: {
+  range: DateRange; min: string; max: string; onChange: (range: DateRange) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [arrival, setArrival] = useState("");
+  const [preview, setPreview] = useState("");
+  const valid = isDate(range.checkIn) && isDate(range.checkOut) && range.checkIn < range.checkOut;
+  const label = "Заезд и выезд";
+  const value = valid
+    ? stayLabel(range) + " · " + countLabel(nightsBetween(range), ["ночь", "ночи", "ночей"])
+    : undefined;
+  const earliestDeparture = arrival ? addDays(arrival, 1) : "";
+  const lastArrival = addDays(max, -1);
+  const initialArrival = !valid || range.checkIn < min ? min : range.checkIn > lastArrival ? lastArrival : range.checkIn;
+  return (
+    <Control label={label} value={value} placeholder="Выберите даты" className="search-control" open={open}
+      onOpen={() => { setArrival(""); setPreview(""); setClosing(false); setOpen(true); }} calendar>
+      {open && (
+        <Dialog variant="date-range" title={label} dismiss={closing} onClose={() => setOpen(false)}>
+          <div className="range-steps" aria-live="polite">
+            {arrival ? (
+              <>
+                <p>Заезд <strong>{dateLabel(arrival)}</strong>. Выберите выезд.</p>
+                <button className="text-button" type="button" onClick={() => { setArrival(""); setPreview(""); }}>Изменить заезд</button>
+              </>
+            ) : <p>Выберите дату заезда.</p>}
+          </div>
+          <DateCalendar key={arrival} initial={arrival ? earliestDeparture : initialArrival}
+            value={arrival ? preview : range.checkIn}
+            min={arrival ? earliestDeparture : min} max={arrival ? max : lastArrival}
+            rangeStart={arrival || (valid ? range.checkIn : undefined)}
+            rangeEnd={arrival ? preview : valid ? range.checkOut : undefined}
+            focusOnOpen onPreview={arrival ? setPreview : undefined}
+            onPick={(date) => {
+              if (closing) return;
+              if (!arrival) {
+                setArrival(date);
+                return;
+              }
+              setClosing(true);
+              onChange({ checkIn: arrival, checkOut: date });
+            }} />
+        </Dialog>
+      )}
+    </Control>
+  );
+}
+
+function DateCalendar({ initial, value, min, max, onPick, rangeStart, rangeEnd, focusOnOpen, onPreview }: {
   initial: string; value: string; min: string; max: string; onPick: (date: string) => void;
+  rangeStart?: string; rangeEnd?: string; focusOnOpen?: boolean; onPreview?: (date: string) => void;
 }) {
   const [month, setMonth] = useState(initial.slice(0, 7));
   const [focused, setFocused] = useState(initial);
@@ -104,6 +154,12 @@ function DateCalendar({ initial, value, min, max, onPick }: {
   const today = hotelToday();
   const minMonth = min.slice(0, 7);
   const maxMonth = max.slice(0, 7);
+
+  useEffect(() => {
+    if (!focusOnOpen) return;
+    const frame = requestAnimationFrame(() => grid.current?.querySelector<HTMLElement>("[tabindex='0']")?.focus({ preventScroll: true }));
+    return () => cancelAnimationFrame(frame);
+  }, [focusOnOpen]);
 
   useEffect(() => {
     if (focusDay.current) {
@@ -172,8 +228,12 @@ function DateCalendar({ initial, value, min, max, onPick }: {
           const date = addDays(start, index - offset);
           if (!date.startsWith(month)) return <span className="picker-spacer" key={date} aria-hidden="true" />;
           return (
-            <button key={date} type="button" data-day={date} aria-label={labelOf(date)} aria-pressed={value === date}
+            <button key={date} type="button" data-day={date} aria-label={labelOf(date)}
+              data-in-range={!!rangeStart && !!rangeEnd && date > rangeStart && date < rangeEnd}
+              data-range-endpoint={date === rangeStart || date === rangeEnd}
+              aria-pressed={value === date || date === rangeStart}
               aria-current={today === date ? "date" : undefined} tabIndex={focused === date ? 0 : -1}
+              onFocus={() => onPreview?.(date)} onPointerEnter={() => { if (date >= min && date <= max) onPreview?.(date); }}
               disabled={date < min || date > max} onKeyDown={(event) => navigate(event, date)} onClick={() => onPick(date)}>
               {Number(date.slice(-2))}
             </button>

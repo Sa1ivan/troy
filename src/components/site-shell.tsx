@@ -37,7 +37,7 @@ export function ContactsBand() {
           <p><MapPin size={19} aria-hidden="true" /> {site.address}</p>
         </div>
         <div className="contact-band-actions">
-          <a className="button button-light" href={site.map} target="_blank" rel="noreferrer">Построить маршрут</a>
+          <a className="button button-light" href={site.map} target="_blank" rel="noreferrer">Открыть на карте</a>
           <a className="contact-phone" href={"tel:" + site.telephone}><Phone size={17} aria-hidden="true" /> {site.phone}</a>
         </div>
       </div>
@@ -57,6 +57,7 @@ export function SiteFooter() {
           <a href={"tel:" + site.telephone}><Phone size={16} aria-hidden="true" /> {site.phone}</a>
           <a href={"mailto:" + site.email}><Mail size={16} aria-hidden="true" /> {site.email}</a>
           <Link href={routes.policy}>Политика конфиденциальности</Link>
+          <Link href={routes.admin}>Вход для сотрудников</Link>
         </div>
       </div>
     </footer>

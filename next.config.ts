@@ -41,5 +41,6 @@ const serverRoutes: NextConfig = {
 };
 
 export default pagesBasePath
-  ? { ...config, basePath: pagesBasePath, output: "export" }
+  // The JavaScript hotel route requires the Node.js server.
+  ? { ...config, basePath: pagesBasePath, output: "export", pageExtensions: ["ts", "tsx"] }
   : { ...config, ...serverRoutes };

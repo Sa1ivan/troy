@@ -1,7 +1,8 @@
 import { PageIntro } from "@/components/site-shell";
+import { BookingDataStorage } from "@/components/hotel-provider";
 import { pageMetadata, routes, site } from "@/lib/site";
 
-export const metadata = pageMetadata("Политика конфиденциальности", "Как локальная версия сайта «Троя» использует данные из формы бронирования.", routes.policy);
+export const metadata = pageMetadata("Политика конфиденциальности", "Как сайт «Троя» использует данные из формы бронирования.", routes.policy);
 
 export default function PolicyPage() {
   return (
@@ -10,8 +11,7 @@ export default function PolicyPage() {
       <div className="container section text-page">
         <h2>Данные заявки</h2>
         <p>Для заявки на проживание форма запрашивает имя, телефон, число гостей, даты и категорию номера. Эти сведения нужны, чтобы администратор мог связаться с гостем и согласовать условия проживания.</p>
-        <h2>Локальная демонстрация</h2>
-        <p>Заявки и оплаты сохраняются в браузере на этом устройстве. Для проверки используйте тестовые данные. Чтобы удалить сохранённые в демонстрации записи, очистите данные этого сайта в настройках браузера.</p>
+        <BookingDataStorage />
         <p>Связаться с гостевым домом можно по адресу <a href={"mailto:" + site.email}>{site.email}</a>.</p>
       </div>
     </>

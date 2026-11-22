@@ -7,7 +7,7 @@ export function Dialog({ title, children, onClose, variant = "panel", dismiss = 
   title: string;
   children: ReactNode;
   onClose: () => void;
-  variant?: "panel" | "sheet" | "fullscreen";
+  variant?: "panel" | "sheet" | "fullscreen" | "date-range";
   dismiss?: boolean;
   onKeyDown?: KeyboardEventHandler<HTMLDialogElement>;
 }) {

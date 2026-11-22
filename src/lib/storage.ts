@@ -27,7 +27,7 @@ function openDatabase(): Promise<IDBDatabase> {
   return connection;
 }
 
-export async function loadOrUpdateHotel(command?: Command): Promise<HotelState> {
+export async function loadOrUpdateHotel(command?: Command, restoreRequest = false): Promise<HotelState> {
   const database = await openDatabase();
   return new Promise((resolve, reject) => {
     // Reading and checking inside the write transaction serializes conflicts across tabs.
@@ -39,7 +39,9 @@ export async function loadOrUpdateHotel(command?: Command): Promise<HotelState> 
     request.onsuccess = () => {
       try {
         state = request.result ?? createDemoState();
-        if (command) applyCommand(state, command);
+        const existingRequest = restoreRequest && command?.type === "request"
+          && state.bookings.some(({ id, source }) => id === command.id && source === "site");
+        if (command && !existingRequest) applyCommand(state, command);
         if (command || !request.result) records.put(state, stateKey);
       } catch (error) {
         failure = error;

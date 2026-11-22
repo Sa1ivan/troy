@@ -16,9 +16,11 @@ export const site = {
   phone: "+7 (938) 400-80-46",
   telephone: "+79384008046",
   email: "troy-laz@inbox.ru",
-  map: "https://yandex.ru/maps/?text=" + encodeURIComponent("Сочи, Лазаревское, Спортивная 5"),
+  map: "https://yandex.ru/maps/org/troya/1214414623/",
   vk: "https://vk.com/troylazarevskoe",
-  hero: "/images/hotel/troy-facade.webp",
+  hero: "/images/hotel/pool/08.webp",
+  heroMobile: "/images/hotel/pool/08-mobile.webp",
+  facade: "/images/hotel/troy-facade.webp",
   logo: "/images/logo.png",
 };
 

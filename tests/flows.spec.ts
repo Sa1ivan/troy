@@ -2,17 +2,22 @@ import { expect, test, type Page } from "@playwright/test";
 
 const basePath = new URL(process.env.TROY_TEST_URL ?? "http://localhost").pathname.replace(/\/$/, "");
 const pagesDemo = basePath !== "";
-const submitRequestLabel = pagesDemo ? "Сохранить тестовую заявку" : "Отправить заявку";
-const requestSuccessLabel = pagesDemo ? "Тестовая заявка сохранена" : "Заявка принята";
+const submitRequestLabel = "Сохранить тестовую заявку";
+const requestSuccessLabel = "Тестовая заявка сохранена";
+
+test.beforeEach(async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-11-21T09:00:00Z"));
+});
 
 function sitePath(path: string) {
   return encodeURI(basePath + path);
 }
 
-async function chooseDate(page: Page, label: string, date: string) {
-  await page.getByRole("button", { name: label, exact: true }).click();
-  const picker = page.getByRole("dialog", { name: label, exact: true });
-  await picker.getByRole("button", { name: date, exact: true }).click();
+async function chooseStay(page: Page, arrival: string, departure: string) {
+  await page.getByRole("button", { name: "Заезд и выезд", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Заезд и выезд", exact: true });
+  await picker.getByRole("button", { name: arrival, exact: true }).click();
+  await picker.getByRole("button", { name: departure, exact: true }).click();
   await expect(picker).toBeHidden();
 }
 
@@ -33,15 +38,14 @@ async function signIn(page: Page) {
   await expect(page.getByRole("link", { name: "Админка", exact: true })).toBeVisible();
 }
 
-for (const { path, action } of [
-  { path: "/", action: "Найти номер" },
-  { path: "/номера/standard-dbl/", action: "Проверить наличие" },
+for (const { path, action, heading } of [
+  { path: "/", action: "Найти номер", heading: "Номера на ваши даты" },
+  { path: "/номера/standard-dbl/", action: "Проверить наличие", heading: "На ваши даты" },
 ]) {
   test("подбор плавно прокручивает к результату на той же странице " + path, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(sitePath(path));
-    await chooseDate(page, "Заезд", "14 июня 2027");
-    await chooseDate(page, "Выезд", "16 июня 2027");
+    await chooseStay(page, "14 июня 2027", "16 июня 2027");
     const submit = page.getByRole("button", { name: action, exact: true });
     await submit.scrollIntoViewIfNeeded();
     await page.evaluate(() => {
@@ -53,7 +57,7 @@ for (const { path, action } of [
       }, { passive: true });
     });
     await submit.click();
-    const results = page.getByRole("region", { name: "Номера на ваши даты", exact: true });
+    const results = page.getByRole("region", { name: heading, exact: true });
     await expect(results).toContainText(/9\s500\s₽/);
     expect(decodeURI(new URL(page.url()).pathname)).toBe(basePath + path);
     await expect.poll(async () => results.evaluate((element) => {
@@ -61,7 +65,7 @@ for (const { path, action } of [
       const atPageEnd = Math.abs(window.scrollY + window.innerHeight - document.documentElement.scrollHeight) < 2;
       return top > 48 && (top < 130 || (atPageEnd && bottom < window.innerHeight));
     })).toBe(true);
-    await expect(results.getByRole("heading", { name: "Номера на ваши даты" })).toBeFocused();
+    await expect(results.getByRole("heading", { name: heading })).toBeFocused();
     await expect.poll(async () => Number(await page.locator("html").getAttribute("data-scroll-positions"))).toBeGreaterThan(3);
   });
 }
@@ -74,10 +78,10 @@ test("гость с телефона отправляет заявку, адми
 
   await page.goto(sitePath("/"));
   const facade = page.getByRole("img", { name: "Фасад гостевого дома «Троя» в Лазаревском" });
+  await facade.scrollIntoViewIfNeeded();
   await expect.poll(() => facade.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
   await expect(page.getByRole("link", { name: "Админка", exact: true })).toHaveCount(0);
-  await chooseDate(page, "Заезд", "14 июня 2027");
-  await chooseDate(page, "Выезд", "16 июня 2027");
+  await chooseStay(page, "14 июня 2027", "16 июня 2027");
   await page.getByRole("button", { name: "Найти номер" }).click();
   const result = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Стандарт DBL", exact: true }) });
   await expect(result).toContainText(/9\s500\s₽/);
@@ -119,11 +123,8 @@ test("гость с телефона отправляет заявку, адми
   await expect(strip.locator("..")).toHaveAttribute("colspan", "2");
   await staff.getByRole("button", { name: "Стандарт DBL 01, 13 июня", exact: true }).click();
   await staff.getByRole("button", { name: "Стандарт DBL 01, 16 июня", exact: true }).click();
-  await dialog.getByRole("button", { name: "Закрыть даты", exact: true }).click();
-  await dialog.getByLabel("Причина закрытия").fill("Ремонт");
-  await dialog.getByRole("button", { name: "Сохранить закрытие" }).click();
-  await expect(dialog.getByRole("alert")).toContainText("Даты пересекаются");
-  await dialog.getByRole("button", { name: "Закрыть", exact: true }).click();
+  await expect(staff.getByRole("region", { name: "Шахматка", exact: true }).getByRole("alert")).toContainText("Даты пересекаются");
+  await expect(dialog).toBeHidden();
 
   await staff.reload();
   await expect(staff.getByRole("button", { name: /Тестовый Гость/ })).toBeVisible();
@@ -131,7 +132,8 @@ test("гость с телефона отправляет заявку, адми
   await expect(dialog.getByText(/6\s500\s₽/)).toBeVisible();
   await dialog.getByRole("button", { name: "Закрыть", exact: true }).click();
   await staff.getByRole("button", { name: "Деньги и аналитика" }).click();
-  await expect(staff.getByText(/12\s000\s₽/)).toBeVisible();
+  const received = staff.locator(".metric-card").filter({ has: staff.getByText("Получено", { exact: true }) });
+  await expect(received).toContainText(/12\s000\s₽/);
   await staff.getByRole("button", { name: "Выйти", exact: true }).click();
   await expect(staff.getByRole("link", { name: "Админка", exact: true })).toHaveCount(0);
   await expect(staff.getByRole("heading", { name: "Вход для сотрудников" })).toBeVisible();
@@ -240,8 +242,8 @@ test("сайт сохраняет тему и помещается при шир
   await expect(guests).toBeVisible();
   await page.mouse.click(20, 16);
   await expect(guests).toBeHidden();
-  await page.getByRole("button", { name: "Заезд", exact: true }).click();
-  const dates = page.getByRole("dialog", { name: "Заезд", exact: true });
+  await page.getByRole("button", { name: "Заезд и выезд", exact: true }).click();
+  const dates = page.getByRole("dialog", { name: "Заезд и выезд", exact: true });
   await expect(dates).toBeVisible();
   await page.mouse.click(20, 16);
   await expect(dates).toBeHidden();
@@ -252,8 +254,9 @@ test("сайт сохраняет тему и помещается при шир
 test("одновременное подтверждение двух заявок в одну комнату даёт одну бронь", async ({ page, context }) => {
   const names = ["Гость Первый", "Гость Второй"];
   const bookingPath = sitePath("/номера/бронирование/") + "?checkIn=2027-06-14&checkOut=2027-06-16&guests=2&category=standard-dbl";
-  for (const name of names) {
-    await page.goto(bookingPath);
+  await page.goto(bookingPath);
+  for (const [index, name] of names.entries()) {
+    if (index > 0) await page.getByRole("button", { name: "Новая заявка", exact: true }).click();
     await page.getByLabel("Имя", { exact: true }).fill(name);
     await page.getByLabel("Телефон", { exact: true }).fill("+70000000008");
     await page.getByRole("checkbox", { name: /Согласен на обработку/ }).check();
@@ -290,7 +293,7 @@ test("фотографии открываются во весь экран и л
   expect(await viewer.boundingBox()).toMatchObject({ x: 0, y: 0, width: 390, height: 844 });
   await page.keyboard.press("ArrowRight");
   await expect(viewer.getByText("2 / 19", { exact: true })).toBeVisible();
-  await viewer.getByRole("img", { name: /фото 2/ }).evaluate((stage) => {
+  await viewer.getByRole("img", { name: /Вид с крыши на море и Лазаревское/ }).evaluate((stage) => {
     for (const [type, clientX] of [["touchstart", 270], ["touchend", 70]] as const) {
       const touch = new Touch({ identifier: 0, target: stage, clientX, clientY: 300 });
       stage.dispatchEvent(new TouchEvent(type, { bubbles: true, changedTouches: [touch] }));
@@ -299,7 +302,7 @@ test("фотографии открываются во весь экран и л
   await expect(viewer.getByText("3 / 19", { exact: true })).toBeVisible();
   await viewer.getByRole("button", { name: "Следующее фото", exact: true }).click();
   await expect(viewer.getByText("4 / 19", { exact: true })).toBeVisible();
-  await expect(viewer.getByRole("img", { name: /фото 4/ })).toBeVisible();
+  await expect(viewer.getByRole("img", { name: /Бассейн и колесо обозрения вдали/ })).toBeVisible();
   await expect(viewer.locator(".photo-previous")).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(viewer).toBeHidden();

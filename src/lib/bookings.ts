@@ -1,10 +1,11 @@
 import { buildInventory, findCategory, quoteStay, roomCapacity, type CategoryId, type NightPrice, type Room } from "./catalog";
 import {
-  containsNight, eachNight, isDate, overlaps, overlapNights, season, stayError, type DateRange, type Stay,
+  containsNight, eachNight, hotelToday, isDate, overlaps, overlapNights, season, stayError, type DateRange, type Stay,
 } from "./dates";
 
 export type Contact = { name: string; phone: string };
 export type BookingStatus = "pending" | "confirmed" | "rejected" | "cancelled";
+type RoomRange = DateRange & { roomId: string };
 
 export type Booking = {
   id: string;
@@ -16,19 +17,26 @@ export type Booking = {
   source: "site" | "manual";
   nights: NightPrice[];
   total: number;
+  quotedTotal?: number | null;
+  revision?: number;
+  // Completed room segments. A cancelled stay stores every completed segment here.
+  roomHistory?: RoomRange[];
 };
 
 export type Block = { id: string; roomId: string; range: DateRange; reason: string };
 export type Payment = { id: string; bookingId: string; date: string; amount: number };
-export type HotelState = { rooms: Room[]; bookings: Booking[]; blocks: Block[]; payments: Payment[] };
+export type Refund = Payment & { paymentId: string; reason: string };
+export type HotelState = { rooms: Room[]; bookings: Booking[]; blocks: Block[]; payments: Payment[]; refunds?: Refund[] };
 
 export type Command =
   | { type: "request"; id: string; categoryId: CategoryId; stay: Stay; contact: Contact }
   | { type: "confirm"; id: string; roomId: string; total: number }
+  | { type: "amendBooking"; id: string; roomId: string; stay: Stay; total: number; expectedRevision?: number }
   | { type: "reject" | "cancel" | "unblock"; id: string }
   | { type: "manualBooking"; id: string; roomId: string; stay: Stay; contact: Contact; total: number; expectedCategoryId?: CategoryId | null }
   | { type: "block"; id: string; roomId: string; range: DateRange; reason: string }
   | { type: "payment"; id: string; bookingId: string; date: string; amount: number }
+  | ({ type: "refund" } & Refund)
   | { type: "room"; id: string; changes: Partial<Pick<Room, "label" | "floor" | "categoryId">> };
 
 export class BookingError extends Error {}
@@ -56,13 +64,35 @@ export function parseAmount(value: string): number {
   return Math.round(Number(normalized) * 100);
 }
 
+export function bookingRoomRanges(booking: Booking): RoomRange[] {
+  const history = booking.roomHistory ?? [];
+  if (booking.status !== "confirmed" || !booking.roomId) return history;
+  const checkIn = history.at(-1)?.checkOut ?? booking.stay.checkIn;
+  return checkIn < booking.stay.checkOut
+    ? [...history, { roomId: booking.roomId, checkIn, checkOut: booking.stay.checkOut }]
+    : history;
+}
+
 export function occupiedRanges(state: HotelState, roomId: string) {
   return [
-    ...state.bookings.filter((booking) => booking.roomId === roomId && booking.status === "confirmed")
-      .map((booking) => ({ kind: "booking" as const, range: booking.stay, record: booking })),
+    ...state.bookings.flatMap((booking) => bookingRoomRanges(booking)
+      .filter((range) => range.roomId === roomId)
+      .map((range) => ({ kind: "booking" as const, range, record: booking }))),
     ...state.blocks.filter((block) => block.roomId === roomId)
       .map((block) => ({ kind: "block" as const, range: block.range, record: block })),
   ];
+}
+
+export function findRangeConflict(state: HotelState, roomId: string, range: DateRange, bookingId?: string) {
+  return occupiedRanges(state, roomId).find((entry) => (entry.kind === "block" || entry.record.id !== bookingId)
+    && overlaps(entry.range, range));
+}
+
+export function bookingsOverCapacity(state: HotelState, room: Room, categoryId: Room["categoryId"], today = hotelToday()) {
+  const capacity = roomCapacity({ id: room.id, categoryId });
+  if (capacity >= roomCapacity(room)) return [];
+  return state.bookings.filter((booking) => booking.roomId === room.id && booking.status === "confirmed"
+    && booking.stay.checkOut > today && booking.stay.guests > capacity);
 }
 
 export function availableRooms(state: HotelState, categoryId: CategoryId, stay: Stay): Room[] {
@@ -70,12 +100,19 @@ export function availableRooms(state: HotelState, categoryId: CategoryId, stay: 
   if (!category || stay.guests > category.capacity || stayError(stay)) return [];
   return state.rooms.filter((room) => room.categoryId === categoryId
     && stay.guests <= roomCapacity(room)
-    && !occupiedRanges(state, room.id).some(({ range }) => overlaps(range, stay)));
+    && !findRangeConflict(state, room.id, stay));
 }
 
 export function paidFor(state: HotelState, bookingId: string): number {
-  return state.payments.filter((payment) => payment.bookingId === bookingId)
+  const paid = state.payments.filter((payment) => payment.bookingId === bookingId)
     .reduce((sum, payment) => sum + payment.amount, 0);
+  return paid - (state.refunds ?? []).filter((refund) => refund.bookingId === bookingId)
+    .reduce((sum, refund) => sum + refund.amount, 0);
+}
+
+export function refundableFor(state: HotelState, payment: Payment): number {
+  return payment.amount - (state.refunds ?? []).filter(({ paymentId }) => paymentId === payment.id)
+    .reduce((sum, refund) => sum + refund.amount, 0);
 }
 
 export function outstanding(state: HotelState, booking: Booking): number {
@@ -94,8 +131,8 @@ function requireBooking(state: HotelState, id: string, status: BookingStatus): B
   return booking;
 }
 
-function requireFree(state: HotelState, roomId: string, next: DateRange) {
-  if (occupiedRanges(state, roomId).some(({ range }) => overlaps(range, next))) {
+function requireFree(state: HotelState, roomId: string, next: DateRange, bookingId?: string) {
+  if (findRangeConflict(state, roomId, next, bookingId)) {
     throw new BookingError("Даты пересекаются с другой бронью или закрытием этой комнаты.");
   }
 }
@@ -112,26 +149,35 @@ function requireAmount(amount: number) {
   }
 }
 
-function confirm(booking: Booking, room: Room, total: number) {
-  requireAmount(total);
-  const estimate = booking.categoryId ? quoteStay(booking.categoryId, booking.stay) : null;
-  const dates = eachNight(booking.stay);
+function allocateNights(stay: Stay, categoryId: CategoryId | null, total: number): NightPrice[] {
+  const estimate = categoryId ? quoteStay(categoryId, stay) : null;
+  const dates = eachNight(stay);
   const weight = estimate?.total ?? dates.length;
   let cumulativeWeight = 0;
   let assigned = 0;
-  booking.nights = dates.map((date, index) => {
+  return dates.map((date, index) => {
     cumulativeWeight += estimate?.nights[index].amount ?? 1;
     const cumulativeAmount = Number(BigInt(total) * BigInt(cumulativeWeight) / BigInt(weight));
     const amount = cumulativeAmount - assigned;
     assigned = cumulativeAmount;
     return { date, amount };
   });
+}
+
+function confirm(booking: Booking, room: Room, total: number) {
+  requireAmount(total);
+  booking.nights = allocateNights(booking.stay, booking.categoryId, total);
   booking.roomId = room.id;
   booking.status = "confirmed";
   booking.total = total;
 }
 
-export function applyCommand(state: HotelState, command: Command): void {
+function livedRoomRanges(booking: Booking, today: string): RoomRange[] {
+  return bookingRoomRanges(booking).filter(({ checkIn }) => checkIn < today)
+    .map((range) => range.checkOut > today ? { ...range, checkOut: today } : range);
+}
+
+export function applyCommand(state: HotelState, command: Command, today = hotelToday()): void {
   switch (command.type) {
     case "request": {
       const category = findCategory(command.categoryId);
@@ -145,6 +191,7 @@ export function applyCommand(state: HotelState, command: Command): void {
       state.bookings.push({
         id: command.id, categoryId: command.categoryId, stay: command.stay, contact,
         status: "pending", source: "site", roomId: null, nights: [], total: 0,
+        quotedTotal: quoteStay(command.categoryId, command.stay)?.total ?? null,
       });
       return;
     }
@@ -157,12 +204,54 @@ export function applyCommand(state: HotelState, command: Command): void {
       confirm(booking, room, command.total);
       return;
     }
+    case "amendBooking": {
+      const booking = requireBooking(state, command.id, "confirmed");
+      const revision = booking.revision ?? 0;
+      if (command.expectedRevision !== undefined && command.expectedRevision !== revision) {
+        throw new BookingError("Бронь изменилась. Закройте форму редактирования и откройте её снова.");
+      }
+      const room = requireRoom(state, command.roomId);
+      const { stay, total } = command;
+      if (booking.stay.checkOut < today) throw new BookingError("Проживание уже завершено.");
+      requireStay(stay);
+      if (booking.stay.checkIn < today ? stay.checkIn !== booking.stay.checkIn : stay.checkIn < today) {
+        throw new BookingError("Дату состоявшегося заезда изменить нельзя. Для будущей брони выберите дату с сегодняшнего дня.");
+      }
+      if (stay.checkOut < today) throw new BookingError("Укажите дату выезда не раньше сегодняшней.");
+      const remaining = { ...stay, checkIn: stay.checkIn > today ? stay.checkIn : today };
+      const pastNights = booking.nights.filter(({ date }) => date < today);
+      const pastTotal = pastNights.reduce((sum, { amount }) => sum + amount, 0);
+      const moved = room.id !== booking.roomId;
+      const categoryId = moved ? room.categoryId : booking.categoryId;
+      const hasRemaining = remaining.checkIn < remaining.checkOut;
+      if (hasRemaining) {
+        requireStay(remaining, roomCapacity(room));
+        requireFree(state, room.id, remaining, booking.id);
+        requireAmount(total);
+        if (total < pastTotal) throw new BookingError("Стоимость не может быть меньше суммы за прожитые ночи.");
+      } else {
+        if (moved) throw new BookingError("При выезде сегодня сохраните текущую комнату.");
+        if (total !== pastTotal) throw new BookingError("При выезде сегодня сумма должна равняться стоимости прожитых ночей.");
+      }
+      const nights = hasRemaining ? [...pastNights, ...allocateNights(remaining, categoryId, total - pastTotal)] : pastNights;
+      if (moved && pastNights.length) booking.roomHistory = livedRoomRanges(booking, today);
+      Object.assign(booking, { roomId: room.id, categoryId, stay, total, nights, revision: revision + 1 });
+      return;
+    }
     case "reject":
       requireBooking(state, command.id, "pending").status = "rejected";
       return;
-    case "cancel":
-      requireBooking(state, command.id, "confirmed").status = "cancelled";
+    case "cancel": {
+      const booking = requireBooking(state, command.id, "confirmed");
+      if (booking.stay.checkIn < today) {
+        booking.roomHistory = livedRoomRanges(booking, today);
+        booking.stay = { ...booking.stay, checkOut: booking.stay.checkOut < today ? booking.stay.checkOut : today };
+        booking.nights = booking.nights.filter(({ date }) => date < today);
+        booking.total = booking.nights.reduce((sum, { amount }) => sum + amount, 0);
+      }
+      booking.status = "cancelled";
       return;
+    }
     case "manualBooking": {
       const room = requireRoom(state, command.roomId);
       if (command.expectedCategoryId !== undefined && command.expectedCategoryId !== room.categoryId) {
@@ -202,6 +291,19 @@ export function applyCommand(state: HotelState, command: Command): void {
       state.payments.push({ id: command.id, bookingId: command.bookingId, date: command.date, amount: command.amount });
       return;
     }
+    case "refund": {
+      const { id, bookingId, paymentId, date, amount } = command;
+      const payment = state.payments.find((entry) => entry.id === paymentId && entry.bookingId === bookingId);
+      if (!payment) throw new BookingError("Платёж для возврата не найден.");
+      const reason = command.reason.trim();
+      if (!reason || reason.length > 120) throw new BookingError("Укажите причину возврата, до 120 символов.");
+      if (!isDate(date) || date < payment.date) throw new BookingError("Укажите дату возврата не раньше даты платежа.");
+      requireAmount(amount);
+      if (state.refunds?.some((entry) => entry.id === id)) throw new BookingError("Возврат уже сохранён.");
+      if (amount > refundableFor(state, payment)) throw new BookingError("Возврат превышает доступную сумму платежа.");
+      (state.refunds ??= []).push({ id, bookingId, paymentId, date, amount, reason });
+      return;
+    }
     case "room": {
       const room = requireRoom(state, command.id);
       const { label = room.label, floor = room.floor, categoryId = room.categoryId } = command.changes;
@@ -214,19 +316,25 @@ export function applyCommand(state: HotelState, command: Command): void {
       if (state.rooms.some((entry) => entry.id !== room.id && entry.building === room.building && entry.label.toLowerCase() === name.toLowerCase())) {
         throw new BookingError("В этом корпусе уже есть комната с такой подписью.");
       }
+      const conflicts = bookingsOverCapacity(state, room, categoryId, today);
+      if (conflicts.length) {
+        throw new BookingError("Новая вместимость меньше числа гостей. Сначала переселите брони "
+          + conflicts.map(({ id }) => id).join(", ") + ".");
+      }
       Object.assign(room, { label: name, floor, categoryId });
     }
   }
 }
 
 export function getReport(state: HotelState, range: DateRange) {
-  const confirmed = state.bookings.filter((booking) => booking.status === "confirmed");
+  const occupied = state.bookings.map((booking) => ({ booking, ranges: bookingRoomRanges(booking) }))
+    .filter(({ ranges }) => ranges.length > 0);
   const inPeriod = (date: string) => containsNight(range, date);
   const roomNights = overlapNights(range, season);
   const buildings = ([1, 2] as const).map((building) => {
     const roomIds = new Set(state.rooms.filter((room) => room.building === building).map(({ id }) => id));
-    const occupiedNights = confirmed.filter((booking) => booking.roomId && roomIds.has(booking.roomId))
-      .reduce((sum, booking) => sum + overlapNights(booking.stay, range), 0);
+    const occupiedNights = occupied.flatMap(({ ranges }) => ranges).filter(({ roomId }) => roomIds.has(roomId))
+      .reduce((sum, occupiedRange) => sum + overlapNights(occupiedRange, range), 0);
     const closedNights = state.blocks.filter((block) => roomIds.has(block.roomId))
       .reduce((sum, block) => sum + overlapNights(block.range, range), 0);
     const sellableNights = roomIds.size * roomNights - closedNights;
@@ -234,19 +342,21 @@ export function getReport(state: HotelState, range: DateRange) {
   });
   const occupiedNights = buildings.reduce((sum, building) => sum + building.occupiedNights, 0);
   const sellableNights = buildings.reduce((sum, building) => sum + building.sellableNights, 0);
+  const received = state.payments.filter((payment) => inPeriod(payment.date)).reduce((sum, payment) => sum + payment.amount, 0);
+  const refunded = (state.refunds ?? []).filter((refund) => inPeriod(refund.date)).reduce((sum, refund) => sum + refund.amount, 0);
   return {
     occupiedNights, sellableNights, buildings,
     occupancy: sellableNights ? occupiedNights / sellableNights * 100 : 0,
-    arrivals: confirmed.filter((booking) => inPeriod(booking.stay.checkIn)).length,
-    departures: confirmed.filter((booking) => inPeriod(booking.stay.checkOut)).length,
-    revenue: confirmed.reduce((sum, booking) =>
+    arrivals: occupied.filter(({ booking }) => inPeriod(booking.stay.checkIn)).length,
+    departures: occupied.filter(({ booking }) => inPeriod(booking.stay.checkOut)).length,
+    revenue: occupied.reduce((sum, { booking }) =>
       sum + booking.nights.filter((night) => inPeriod(night.date)).reduce((total, night) => total + night.amount, 0), 0),
-    received: state.payments.filter((payment) => inPeriod(payment.date)).reduce((sum, payment) => sum + payment.amount, 0),
+    received, refunded, netReceived: received - refunded,
   };
 }
 
 export function createDemoState(): HotelState {
-  const state: HotelState = { rooms: buildInventory(), bookings: [], blocks: [], payments: [] };
+  const state: HotelState = { rooms: buildInventory(true), bookings: [], blocks: [], payments: [] };
   applyCommand(state, {
     type: "manualBooking", id: "TR-DEMO1", roomId: "b1-suite-1-1",
     stay: { checkIn: "2027-06-06", checkOut: "2027-06-11", guests: 5 }, total: 3000000,

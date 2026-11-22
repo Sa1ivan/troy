@@ -1,9 +1,12 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
-import { availableRooms, outstanding, paidFor, parseAmount, type Block, type Booking, type Command, type HotelState } from "@/lib/bookings";
+import {
+  availableRooms, bookingRoomRanges, bookingsOverCapacity, findRangeConflict, outstanding, paidFor, parseAmount, refundableFor,
+  type Block, type Booking, type Command, type HotelState, type Payment,
+} from "@/lib/bookings";
 import { categories, findCategory, money, quoteStay, roomCapacity, type CategoryId, type Room } from "@/lib/catalog";
-import { countLabel, dateLabel, hotelToday, nightsBetween, stayLabel, type DateRange } from "@/lib/dates";
+import { addDays, countLabel, dateLabel, firstArrival, hotelToday, nightsBetween, season, stayLabel, type DateRange } from "@/lib/dates";
 import { newRecordId } from "@/lib/storage";
 import { DateField, SelectField } from "../controls";
 import { Dialog } from "../dialog";
@@ -33,21 +36,29 @@ function useCommand() {
   return { busy, error, execute, clear: () => setError("") };
 }
 
-export function BookingDialog({ state, booking, onCalendar, onClose }: {
-  state: HotelState; booking: Booking; onCalendar: () => void; onClose: () => void;
+export function BookingDialog({ state, booking, initiallyEditing, onCalendar, onClose }: {
+  state: HotelState; booking: Booking; initiallyEditing: boolean; onCalendar: () => void; onClose: () => void;
 }) {
   const { busy, error, execute, clear } = useCommand();
   const [roomId, setRoomId] = useState("");
   const [action, setAction] = useState<"reject" | "cancel" | null>(null);
+  const [editing, setEditing] = useState<"dates" | "early" | null>(initiallyEditing ? "dates" : null);
   const [paymentDate, setPaymentDate] = useState(hotelToday);
+  const [refundPayment, setRefundPayment] = useState<Payment | null>(null);
+  const [refundDate, setRefundDate] = useState(hotelToday);
   const [goToCalendar, setGoToCalendar] = useState(false);
+  const today = hotelToday();
   const room = state.rooms.find(({ id }) => id === booking.roomId);
   const category = findCategory(booking.categoryId);
-  const estimate = category ? quoteStay(category.id, booking.stay) : null;
+  const quote = booking.quotedTotal === undefined && category ? quoteStay(category.id, booking.stay)?.total : booking.quotedTotal;
   const rooms = category && booking.status === "pending" ? availableRooms(state, category.id, booking.stay) : [];
   const payments = state.payments.filter(({ bookingId }) => bookingId === booking.id).sort((a, b) => a.date.localeCompare(b.date));
+  const refunds = (state.refunds ?? []).filter(({ bookingId }) => bookingId === booking.id).sort((a, b) => a.date.localeCompare(b.date));
   const paid = paidFor(state, booking.id);
   const balance = outstanding(state, booking);
+  const canEdit = booking.status === "confirmed" && booking.stay.checkOut >= today;
+  const canLeaveEarly = canEdit && booking.stay.checkIn < today && booking.stay.checkOut > today;
+  const hasRoomNights = bookingRoomRanges(booking).length > 0;
 
   function confirm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -62,6 +73,15 @@ export function BookingDialog({ state, booking, onCalendar, onClose }: {
     void execute({ type: "payment", id: newRecordId(), bookingId: booking.id,
       amount: parseAmount(String(data.get("amount"))), date: String(data.get("date")),
     }, () => { const amount = form.elements.namedItem("amount"); if (amount instanceof HTMLInputElement) amount.value = ""; });
+  }
+
+  function refund(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!refundPayment) return;
+    const data = new FormData(event.currentTarget);
+    void execute({ type: "refund", id: newRecordId(), bookingId: booking.id, paymentId: refundPayment.id,
+      amount: parseAmount(String(data.get("amount"))), date: refundDate, reason: String(data.get("reason")),
+    }, () => setRefundPayment(null));
   }
 
   return (
@@ -79,24 +99,52 @@ export function BookingDialog({ state, booking, onCalendar, onClose }: {
           <SelectField label="Комната" value={roomId} placeholder="Выберите комнату" onChange={(next) => { setRoomId(next); clear(); }}
             options={rooms.map((entry) => ({ value: entry.id, label: "Корпус " + entry.building + " · " + entry.label }))} />
           {!rooms.length && <p className="notice">Свободных комнат этой категории на все даты сейчас нет.</p>}
-          <label>Стоимость проживания, ₽<input name="total" inputMode="decimal" required defaultValue={estimate ? String(estimate.total / 100) : ""} /></label>
+          <label>Стоимость проживания, ₽<input name="total" inputMode="decimal" required defaultValue={quote == null ? "" : String(quote / 100)} /></label>
           <div className="button-row">
             <button className="button button-primary" type="submit" disabled={busy || !rooms.some(({ id }) => id === roomId)}>Подтвердить бронь</button>
             <button className="button button-outline" type="button" disabled={busy} onClick={() => { clear(); setAction("reject"); }}>Отклонить заявку</button>
           </div>
         </form>
       )}
-      {(booking.status === "confirmed" || (booking.status === "cancelled" && payments.length > 0)) && (
+      {(booking.status === "confirmed" || (booking.status === "cancelled" && (payments.length > 0 || hasRoomNights))) && (
         <div className="dialog-form view-enter" aria-label="Оплаты">
           <dl className="finance-summary">
             <div><dt>Стоимость</dt><dd>{money(booking.total)}</dd></div>
-            <div><dt>Оплачено</dt><dd>{money(paid)}</dd></div>
-            {booking.status === "confirmed" && <div><dt>Остаток</dt><dd>{money(balance)}</dd></div>}
+            <div><dt>{refunds.length ? "Оплачено с учётом возвратов" : "Оплачено"}</dt><dd>{money(paid)}</dd></div>
+            {booking.status === "confirmed" && <div><dt>{balance < 0 ? "Переплата" : "Остаток"}</dt><dd>{money(Math.abs(balance))}</dd></div>}
           </dl>
           {payments.length > 0 && (
             <ul className="payments-list" aria-label="Внесённые оплаты">
-              {payments.map(({ id, date, amount }) => <li key={id}><time dateTime={date}>{dateLabel(date)} {date.slice(0, 4)}</time><strong>{money(amount)}</strong></li>)}
+              {payments.map((payment) => (
+                <li key={payment.id}>
+                  <time dateTime={payment.date}>{dateLabel(payment.date)} {payment.date.slice(0, 4)}</time>
+                  <strong>{money(payment.amount)}</strong>
+                  {refundableFor(state, payment) > 0 && <button className="text-button" type="button" disabled={busy}
+                    onClick={() => { clear(); setRefundPayment(payment); setRefundDate(today < payment.date ? payment.date : today); }}>
+                    Оформить возврат
+                  </button>}
+                </li>
+              ))}
             </ul>
+          )}
+          {refunds.length > 0 && <ul className="payments-list" aria-label="Возвраты">
+            {refunds.map(({ id, date, amount, reason }) => (
+              <li key={id}><time dateTime={date}>{dateLabel(date)} {date.slice(0, 4)}</time><span>{reason}</span><strong>−{money(amount)}</strong></li>
+            ))}
+          </ul>}
+          {refundPayment && (
+            <form className="field-stack payment-form" onSubmit={refund} key={refundPayment.id} aria-label="Возврат платежа">
+              <p className="muted">Платёж от {dateLabel(refundPayment.date)}. К возврату до {money(refundableFor(state, refundPayment))}.</p>
+              <div className="inline-fields">
+                <label>Сумма возврата, ₽<input name="amount" inputMode="decimal" required placeholder="0" /></label>
+                <DateField label="Дата возврата" min={refundPayment.date} value={refundDate} onChange={setRefundDate} />
+              </div>
+              <label>Причина возврата<input name="reason" required maxLength={120} /></label>
+              <div className="button-row">
+                <button type="submit" className="button button-primary" disabled={busy || refundableFor(state, refundPayment) <= 0}>Сохранить возврат</button>
+                <button type="button" className="button button-outline" onClick={() => { clear(); setRefundPayment(null); }}>Назад</button>
+              </div>
+            </form>
           )}
           {booking.status === "confirmed" && (
             <>
@@ -109,17 +157,29 @@ export function BookingDialog({ state, booking, onCalendar, onClose }: {
                   <button className="button button-primary" type="submit" disabled={busy}>Внести оплату</button>
                 </form>
               )}
-              <div className="button-row booking-dialog-actions">
-                <button type="button" className="button button-outline" onClick={() => setGoToCalendar(true)}>Показать в шахматке</button>
-                <button type="button" className="text-button danger-text" disabled={busy} onClick={() => { clear(); setAction("cancel"); }}>Отменить бронь</button>
-              </div>
             </>
           )}
+          <div className="button-row booking-dialog-actions">
+            {hasRoomNights && <button type="button" className="button button-outline" onClick={() => setGoToCalendar(true)}>Показать в шахматке</button>}
+            {canEdit && <button type="button" className="button button-outline" disabled={busy}
+              onClick={() => { clear(); setAction(null); setEditing("dates"); }}>Изменить даты или комнату</button>}
+            {canLeaveEarly && <button type="button" className="button button-outline" disabled={busy}
+              onClick={() => { clear(); setAction(null); setEditing("early"); }}>Досрочный выезд</button>}
+            {booking.status === "confirmed" && <button type="button" className="text-button danger-text" disabled={busy}
+              onClick={() => { clear(); setEditing(null); setAction("cancel"); }}>Отменить бронь</button>}
+          </div>
         </div>
       )}
+      {canEdit && editing && <AmendBookingForm key={editing} state={state} booking={booking} today={today} early={editing === "early"}
+        busy={busy} onCancel={() => { clear(); setEditing(null); }}
+        save={(stay, nextRoomId, total, expectedRevision) => void execute({
+          type: "amendBooking", id: booking.id, roomId: nextRoomId, stay, total, expectedRevision,
+        }, () => setEditing(null))} />}
       {action && ((action === "reject" && booking.status === "pending") || (action === "cancel" && booking.status === "confirmed")) && (
         <div className="confirmation-box">
-          <p>{action === "cancel" ? "Отменить бронь и освободить даты?" : "Отклонить заявку гостя?"}</p>
+          <p>{action === "reject" ? "Отклонить заявку гостя?" : booking.stay.checkIn < today
+            ? "Отменить бронь и освободить оставшиеся даты? Прожитые ночи и платежи сохранятся."
+            : "Отменить бронь и освободить даты?"}</p>
           <div className="button-row">
             <button className="button button-danger" type="button" disabled={busy}
               onClick={() => void execute({ type: action, id: booking.id }, () => setAction(null))}>
@@ -131,6 +191,52 @@ export function BookingDialog({ state, booking, onCalendar, onClose }: {
       )}
       {error && <p className="form-error" role="alert">{error}</p>}
     </Dialog>
+  );
+}
+
+function AmendBookingForm({ state, booking, today, early, busy, save, onCancel }: {
+  state: HotelState; booking: Booking; today: string; early: boolean; busy: boolean;
+  save: (stay: Booking["stay"], roomId: string, total: number, expectedRevision: number) => void; onCancel: () => void;
+}) {
+  const [checkIn, setCheckIn] = useState(booking.stay.checkIn);
+  const [checkOut, setCheckOut] = useState(early ? today : booking.stay.checkOut);
+  const [roomId, setRoomId] = useState(booking.roomId ?? "");
+  const [total, setTotal] = useState(String(booking.total / 100));
+  const [expectedRevision] = useState(booking.revision ?? 0);
+  const arrived = booking.stay.checkIn < today;
+  const remaining = { checkIn: checkIn > today ? checkIn : today, checkOut };
+  const pastTotal = booking.nights.filter(({ date }) => date < today).reduce((sum, { amount }) => sum + amount, 0);
+  const leavingToday = arrived && checkOut === today;
+  const rooms = leavingToday ? [] : state.rooms.filter((room) => roomCapacity(room) >= booking.stay.guests
+    && !findRangeConflict(state, room.id, remaining, booking.id));
+  const validRoom = leavingToday || rooms.some(({ id }) => id === roomId);
+  const conflict = !leavingToday && findRangeConflict(state, roomId, remaining, booking.id);
+  const amount = leavingToday ? pastTotal : parseAmount(total);
+  const validAmount = leavingToday || (amount > 0 && Number.isSafeInteger(amount) && amount >= pastTotal);
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextRoomId = leavingToday ? booking.roomId : roomId;
+    if (nextRoomId && validRoom && validAmount) save({ checkIn, checkOut, guests: booking.stay.guests }, nextRoomId, amount, expectedRevision);
+  }
+  return (
+    <form className="field-stack dialog-form" aria-label="Изменение брони" onSubmit={submit}>
+      <div className="inline-fields">
+        {!arrived && <DateField label="Дата заезда" min={firstArrival(today)} max={addDays(season.checkOut, -1)} value={checkIn}
+          onChange={(date) => { setCheckIn(date); if (date >= checkOut) setCheckOut(addDays(date, 1)); }} />}
+        <DateField label="Дата выезда" min={arrived ? today : addDays(checkIn, 1)} max={season.checkOut} value={checkOut} onChange={setCheckOut} />
+      </div>
+      {!leavingToday && <SelectField label="Комната" value={roomId} onChange={setRoomId} placeholder="Выберите свободную комнату"
+        options={rooms.map((room) => ({ value: room.id, label: "Корпус " + room.building + " · " + room.label }))} />}
+      {conflict && <p className="form-error" role="alert">Даты пересекаются с бронью или закрытием. Выберите другую комнату или даты.</p>}
+      {!leavingToday && !rooms.length && <p className="notice">Свободных комнат для этого числа гостей на выбранные даты нет.</p>}
+      <label>Стоимость проживания, ₽<input name="total" inputMode="decimal" required readOnly={leavingToday}
+        value={leavingToday ? String(pastTotal / 100) : total} onChange={(event) => setTotal(event.target.value)} /></label>
+      {arrived && <p className="muted">За прожитые ночи уже начислено {money(pastTotal)}.</p>}
+      <div className="button-row">
+        <button className="button button-primary" type="submit" disabled={busy || !validRoom || !validAmount}>Сохранить изменения</button>
+        <button className="button button-outline" type="button" onClick={onCancel}>Назад</button>
+      </div>
+    </form>
   );
 }
 
@@ -207,13 +313,17 @@ export function BlockDialog({ block, room, onClose }: { block: Block; room?: Roo
   );
 }
 
-export function RoomDialog({ room, onClose }: { room: Room; onClose: () => void }) {
-  const { busy, error, execute } = useCommand();
+export function RoomDialog({ state, room, onClose, onRelocate }: {
+  state: HotelState; room: Room; onClose: () => void; onRelocate: (id: string) => void;
+}) {
+  const { busy, error, execute, clear } = useCommand();
   const [initial] = useState(room);
   const [category, setCategory] = useState<CategoryId | null>(initial.categoryId);
   const [dismiss, setDismiss] = useState(false);
+  const conflicts = category === initial.categoryId ? [] : bookingsOverCapacity(state, room, category);
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (conflicts.length) return;
     const data = new FormData(event.currentTarget);
     const label = String(data.get("label")).trim();
     const floor = data.get("floor") ? Number(data.get("floor")) : null;
@@ -230,10 +340,20 @@ export function RoomDialog({ room, onClose }: { room: Room; onClose: () => void 
       <form className="field-stack dialog-form" onSubmit={submit}>
         <label>Номер или подпись<input name="label" defaultValue={initial.label} required maxLength={48} /></label>
         <label>Этаж<input name="floor" type="number" min={1} max={room.building === 1 ? 6 : undefined} defaultValue={initial.floor ?? ""} placeholder="Уточняется" /></label>
-        <SelectField label="Категория" value={category ?? ""} onChange={(value) => setCategory(value ? value as CategoryId : null)}
+        <SelectField label="Категория" value={category ?? ""} onChange={(value) => { clear(); setCategory(value ? value as CategoryId : null); }}
           options={[{ value: "", label: "Уточняется" }, ...categories.map(({ id, name }) => ({ value: id, label: name }))]} />
+        {conflicts.length > 0 && <div className="capacity-warning">
+          <p className="form-error" role="alert">Новая вместимость меньше числа гостей. Сначала переселите гостей по этим броням.</p>
+          <ul>
+            {conflicts.map((booking) => <li key={booking.id}>
+              <div><strong>{booking.contact.name}</strong><small>{booking.id} · {stayLabel(booking.stay)} · {countLabel(booking.stay.guests, ["гость", "гостя", "гостей"])}</small></div>
+              <button type="button" className="button button-outline button-small" onClick={() => onRelocate(booking.id)}
+                aria-label={"Переселить · " + booking.contact.name}>Переселить</button>
+            </li>)}
+          </ul>
+        </div>}
         {error && <p className="form-error" role="alert">{error}</p>}
-        <button type="submit" className="button button-primary" disabled={busy}>Сохранить комнату</button>
+        <button type="submit" className="button button-primary" disabled={busy || conflicts.length > 0}>Сохранить комнату</button>
       </form>
     </Dialog>
   );

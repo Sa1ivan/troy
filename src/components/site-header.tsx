@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, LogIn, LogOut, Menu } from "lucide-react";
+import { LayoutDashboard, LogIn, LogOut, Menu, Phone } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { mainLinks, routes, site, withBasePath } from "@/lib/site";
 import { Dialog } from "./dialog";
 import { useHotel } from "./hotel-provider";
+import { StayLink } from "./stay-link";
 import { ThemeToggle } from "./theme-toggle";
 
 export function SiteHeader({ brand }: { brand: ReactNode }) {
@@ -23,12 +24,16 @@ export function SiteHeader({ brand }: { brand: ReactNode }) {
   }, []);
   const { authenticated, signOut } = useHotel();
   const current = (href: string) => visiblePath.startsWith(encodeURI(withBasePath(href)));
-  const navigation = [...mainLinks, ...(authenticated ? [{ href: routes.admin, label: "Админка" }] : [])].map(({ href, label }) => (
-    <Link key={href} href={href} className={href === routes.admin ? "admin-nav-link" : undefined}
-      aria-current={current(href) ? "page" : undefined} onClick={() => { if (expanded) setDismissMenu(true); }}>
-      {href === routes.admin && <LayoutDashboard size={16} aria-hidden="true" />}{label}
-    </Link>
-  ));
+  const closeMenu = () => { if (expanded) setDismissMenu(true); };
+  const navigation = [...mainLinks, ...(authenticated ? [{ href: routes.admin, label: "Админка" }] : [])].map(({ href, label }) => {
+    const NavigationLink = href === routes.rooms || href === routes.prices ? StayLink : Link;
+    return (
+      <NavigationLink key={href} href={href} className={href === routes.admin ? "admin-nav-link" : undefined}
+        aria-current={current(href) ? "page" : undefined} onClick={closeMenu}>
+        {href === routes.admin && <LayoutDashboard size={16} aria-hidden="true" />}{label}
+      </NavigationLink>
+    );
+  });
   return (
     <header className="site-header">
       <a className="skip-link" href="#content">К содержанию</a>
@@ -40,22 +45,28 @@ export function SiteHeader({ brand }: { brand: ReactNode }) {
         </button>
         <nav className="site-nav" aria-label="Основная навигация">{navigation}</nav>
         <div className="masthead-actions">
-          {!authenticated && <a className="masthead-phone" href={"tel:" + site.telephone}>{site.phone}</a>}
+          {!authenticated && <>
+            <a className="masthead-phone" href={"tel:" + site.telephone}>{site.phone}</a>
+            <a className="button button-primary masthead-call" href={"tel:" + site.telephone} aria-label="Позвонить администратору">
+              <Phone size={16} aria-hidden="true" /> <span>Позвонить</span>
+            </a>
+          </>}
           <ThemeToggle />
-          {authenticated ? (
-            <button className="button button-outline masthead-login" type="button" onClick={signOut}>
+          {authenticated && (
+            <button className="button button-outline masthead-logout" type="button" onClick={() => void signOut()}>
               <LogOut size={16} aria-hidden="true" /> Выйти
             </button>
-          ) : (
-            <Link className="button button-outline masthead-login" href={routes.admin}>
-              <LogIn size={16} aria-hidden="true" /> Войти
-            </Link>
           )}
         </div>
       </div>
       {expanded && (
         <Dialog title="Меню" variant="sheet" dismiss={dismissMenu} onClose={() => setExpanded(false)}>
-          <nav className="mobile-nav" aria-label="Основная навигация">{navigation}</nav>
+          <nav className="mobile-nav" aria-label="Основная навигация">
+            {navigation}
+            {!authenticated && <Link href={routes.admin} aria-current={current(routes.admin) ? "page" : undefined} onClick={closeMenu}>
+              <LogIn size={16} aria-hidden="true" /> Сотрудникам
+            </Link>}
+          </nav>
         </Dialog>
       )}
     </header>

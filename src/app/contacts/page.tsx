@@ -11,7 +11,7 @@ export default function ContactsPage() {
       <PageIntro title="Контакты" description="Свяжитесь с администратором гостевого дома напрямую." />
       <section className="container section contacts-layout">
         <div className="contact-list">
-          <div><MapPin size={23} aria-hidden="true" /><div><h2>Адрес</h2><p>{site.address}</p><a className="button button-outline" href={site.map} target="_blank" rel="noreferrer">Построить маршрут</a></div></div>
+          <div><MapPin size={23} aria-hidden="true" /><div><h2>Адрес</h2><p>{site.address}</p><a className="button button-outline" href={site.map} target="_blank" rel="noreferrer">Открыть на карте</a></div></div>
           <div><Phone size={23} aria-hidden="true" /><div><h2>Телефоны</h2>
             <p><a href={"tel:" + site.telephone}>{site.phone}</a> · администратор</p>
             <p><a href="tel:+79288544888">+7 (928) 854-48-88</a> · управляющий</p>

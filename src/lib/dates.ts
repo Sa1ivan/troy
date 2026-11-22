@@ -57,6 +57,7 @@ export function firstArrival(today = hotelToday()): string {
 }
 
 export function stayError(stay: Stay, earliest: string = season.checkIn): string | null {
+  if (!stay.checkIn || !stay.checkOut) return "Выберите даты заезда и выезда.";
   if (!isDate(stay.checkIn) || !isDate(stay.checkOut) || stay.checkIn >= stay.checkOut) {
     return "Выберите дату выезда позже даты заезда.";
   }
